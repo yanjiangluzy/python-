@@ -3,89 +3,130 @@ import threading
 import time
 import sys
 import json
+from common import *
 
 PORT = 8888  # 定义服务器端口
 lock = threading.Lock()  # 定义锁
-users = []  # 定义在线用户列表, 每一个用户用元组的形式存放对应信息
-messages = []  # 定义一个用来存放一条条信息的列表, 形式如: [conn, user_name, addr]
+sendBuffer = []  # 发送缓冲区，以字典形式存放要发送给用户的消息，{user_name:xx, pattern:xx, message:xx}
+
+
+class User:
+    def __init__(self, sock, user_name, addr):
+        self.sock = sock
+        self.user_name = user_name
+        self.addr = addr
+
+
+class Users:
+    def __init__(self):
+        self.user_group = []  # 存放 User列表
+
+    def PrintOnlineUsers(self):
+        print("当前在线用户: ", end=' ')
+        for user in self.user_group:
+            print(user.user_name, end=' ')
+        print()
+
+    def AddUser(self, sock, user_name, addr):
+        lock.acquire()
+        new_user = User(sock, user_name, addr)
+        self.user_group.append(new_user)
+        lock.release()
+        self.PrintOnlineUsers()
+
+    def DelUser(self, addr):
+        lock.acquire()
+        for user in self.user_group:
+            if user.addr == addr:
+                self.user_group.remove(user)
+                break
+        lock.release()
+        self.PrintOnlineUsers()
+
+    def GetOnlineUser(self):
+        # 全盘返回，交由send处理
+        res = self.user_group
+        return res
 
 
 class ChatServer(threading.Thread):
-    global PORT, lock, users
+    global PORT, lock
 
     def __init__(self, port=PORT):
         threading.Thread.__init__(self)
         self.addr = ("", port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # 使用tcp协议通信
+        self.users = Users()  # 定义一个用来管理用户的数据结构
 
+    # 主体控制逻辑: 1. 将新用户添加到在线用户列表中 2. 接收来自该用户的消息
     def Control(self, conn, addr):
-        # user列表中需要存储对应的套接字，以及ip地址，用户名等信息
         # 建立链接后，客户端会发送一次自己的用户名信息
-        user = conn.recv(1024)
-        user = user.decode()
-        # 根据ip地址找对应的用户，而不是用户名
-        self.AddUser(conn, addr, user)
-        print(f"添加来自: {addr}的用户: {user}成功！！！")
+        user_name = conn.recv(1024).decode('utf-8')  # 这里一定收集齐了一次信息吗？
+        self.users.AddUser(conn, user_name, addr)
+        print(f"添加来自: {addr}的用户: {user_name}成功！！！")
         # 做好上述准备工作后，该线程就可以死循环式的开始等待信息的到来
         # noinspection PyBroadException
         try:
             while True:
-                data = conn.recv(1024)
-                data = data.decode()
-                # 将接收的信息放到信息队列中
-                self.PutToMessageQueue(conn, data, addr, True)
+                self.Recv(conn)
         except Exception as e:
-            print(f"user{user}, ip: {addr[0]}, port: {addr[2]}断开链接")
-            self.DelUser(conn, addr)
+            print(f"user: {user_name}, ip: {addr[0]}, port: {addr[1]}断开链接")
+            self.users.DelUser(addr)
+            conn.close()
 
-    def GetOnlineUsers(self):
-        res = []
-        for user in users:
-            res.append(user[1])
-        print(f"当前在线的用户列表: {res}")
-        return res
-
-    def AddUser(self, conn, addr, user_name):
-        users.append((conn, user_name, addr))
-        # 添加完用户后, 更新一下在线用户的信息
-        online_users = self.GetOnlineUsers()
-        self.PutToMessageQueue(conn, online_users, addr, True)
-
-    def DelUser(self, conn, addr):
-        for i in range(len(users)):
-            if users[i][0] == conn:
-                print(f"删除了用户{users[i][1]}, ip: {str(users[i][2][0])}, port: {users[i][2][1]}")
-                users.pop(i)
-                # 获取当前在线用户列表
-                online_users = self.GetOnlineUsers()
-                self.PutToMessageQueue(conn, online_users, addr, False)
-
-    def PutToMessageQueue(self, conn, data, addr, isStr):
-        # 将已经准备好的信息添加到消息队列中
-        lock.acquire()
-        if isStr:
-            # 是用户发送的消息 [user, data]
-            # 找到是哪一个user发送的
-            user_name = ""
-            for user in users:
-                if user[2] == addr:
-                    user_name = user[1]
+    # 提取信息
+    def Recv(self, sock):
+        buffer = ""
+        while True:
+            data = sock.recv(1024).decode('utf-8')  # 添加到缓冲区中
+            print(f"收到的消息: {data}")
+            if len(data) == 0:
+                # 客户端关闭
+                print("客户端关闭，我也即将关闭链接")
+                sock.close()
+                sys.exit(2)  # 线程结束生命
+            buffer = buffer + data
+            while True:
+                pos = buffer.find(sep)
+                if pos == -1:
                     break
-            messages.append((conn, user_name, data))
-        else:
-            messages.append((conn, data))
-        # 是更新的列表
-        lock.release()
+                length = int(buffer[:pos])
+                print(f"length: {length}")
+                if length > len(buffer):
+                    # 说明没有截取完整，那么就返回去继续接收
+                    break
+                string = buffer[pos + 2:pos + 2 + length]
+                buffer = buffer[pos + 2 + length:len(buffer)]  # 从buffer中删除已经提取的部分
+                message = json.loads(string)
+                print(f"message: {message}")
+                sendBuffer.append(message)
+                continue
 
     def Send(self):
-        for message in messages:
-            if len(message) == 3:
-                data = str(message[0]) + ": " + str(message[1])
-                message[0].send(data.encode())
-            else:
-                data = json.dumps(message[1])
-                for user in users:
-                message[0].send(data.encode())
+        while True:
+            time.sleep(1)
+            for data in sendBuffer:
+                # 提取message的各种属性: {user_name:xx, target:xx, message:xx}
+                print("检测到存在信息需要转发")
+                user_name = data['user_name']
+                target = data['target']
+                message = data['message']
+                if target == "group":  # 如果是群发，那么pattern指定为group
+                    # 群发
+                    print("开始群发...")
+                    user_group = self.users.GetOnlineUser()
+                    # 给每一个用户都发送消息，除了自己
+                    for user in user_group:
+                        if user.user_name != user_name:
+                            # 对信息做序列化后编码发送
+                            send_data = {"user_name": user_name, "message": message}
+                            send_data = json.dumps(send_data)
+                            send_data = Encode(send_data)
+                            user.sock.send(send_data.encode())
+                            sendBuffer.remove(data) # 移除已经发送的数据
+                            print("发送完毕")
+                # 私聊 -- 根据target找到对应的用户发送
+                # TODO
 
     def run(self):
         # 绑定内核，开始监听

@@ -382,4 +382,72 @@
 
 
 import json
-string = "user"
+import socket
+import sys
+import time
+
+# {user_name:xx, pattern:xx, message:xx}
+test_dict = {'user_name': "ly", 'target': "group", 'message': "你好"}
+
+# 把字典转成json字符串
+json_text = json.dumps(test_dict)
+length = str(len(json_text))
+json_text = length + ":;" + json_text
+print(length)
+print(json_text)
+json_text = json_text.encode('utf-8')
+print(json_text)
+print(json_text.decode())
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(("127.0.0.1", 8888))
+sock.send("ly".encode('utf-8'))
+time.sleep(2)
+
+print("链接成功")
+sock.send(json_text)
+while True:
+    data = sock.recv(1024)
+    if len(data) == 0:
+        print("对端关闭")
+        sys.exit(1)
+    data.decode('utf-8')
+    print(f"data: {data.decode('utf-8')}")
+# # 把json字符串转成字典
+# json_dict = json.loads(json_text)
+# print(type(json_dict))
+
+
+# def test(x):
+#     x.append(3)
+#     print(x)
+#
+#
+# x = [1,2]
+# test(x)
+# print(x)
+
+#
+# test_list = [(1, 2, 3), (2, 3, 4)]
+# print(test_list)
+# test_list.remove((1, 2, 3))
+# print(test_list)
+
+
+# import socket
+# import threading
+#
+# sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# sock.bind(("", 8080))
+# sock.listen()
+#
+#
+# def handler(sock, name):
+#     while True:
+#         data = sock.recv(1024)
+#         print(f"收到信息: {data}")
+#
+#
+# while True:
+#     service_sock, addr = sock.accept()
+#     t = threading.Thread(target=handler, args=(service_sock, 1))
+#     t.start()

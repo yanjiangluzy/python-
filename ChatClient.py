@@ -4,7 +4,7 @@ import json  # json.dumps(some)打包   json.loads(some)解包
 import tkinter
 import tkinter.messagebox
 from tkinter.messagebox import *
-from tkinter.scrolledtext import ScrolledText  # 导入多行文本框用到的包
+from tkinter.scrolledtext import ScrolledText  # 导入滚动文本框
 
 IP = '127.0.0.1'
 PORT = '8888'
@@ -206,6 +206,10 @@ def my_send_group():
 sendButton = tkinter.Button(chatWindow, text="发送", command=my_send_group)
 sendButton.place(x=515, y=353, width=60, height=30)
 chatWindow.bind('<Return>', my_send_group)  # 绑定回车发送信息
+
+
+
+chatWindow.mainloop()
 
 
 
