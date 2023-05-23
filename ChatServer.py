@@ -7,7 +7,8 @@ from common import *
 
 PORT = 8888  # 定义服务器端口
 lock = threading.Lock()  # 定义锁
-sendBuffer = []  # 发送缓冲区，以字典形式存放要发送给用户的消息，{user_name:xx, pattern:xx, message:xx}
+sendBuffer = []  # 发送缓冲区，以字典形式存放要发送给用户的消息，{user_name:xx, target:xx, message:xx}
+user_sep = ":"  # 用于分割用户id和用户名的字符
 
 
 class User:
@@ -27,18 +28,34 @@ class Users:
             print(user.user_name, end=' ')
         print()
 
+    def UpdateOnlineUsersSeq(self):
+        # 构建好数据发送
+        res = []
+        for user in self.user_group:
+            res.append(user.user_name)
+        dic = {"user_name": ["list"], "message": res}  # 如果user_name是列表类型，代表发送的是列表
+        dic = json.dumps(dic)
+        dic = Encode(dic).encode('utf-8')
+        for user in self.user_group:
+            user.sock.send(dic)
+
     def AddUser(self, sock, user_name, addr):
         lock.acquire()
+        user_id = str(int(time.time()))  # 用时间戳来表示每一个用户
+        user_name = user_id + user_sep + user_name
         new_user = User(sock, user_name, addr)
         self.user_group.append(new_user)
         lock.release()
+        print(f"添加来自: {addr}的用户: {user_name} 成功！！！")
         self.PrintOnlineUsers()
+        return user_name
 
     def DelUser(self, addr):
         lock.acquire()
         for user in self.user_group:
             if user.addr == addr:
                 self.user_group.remove(user)
+                print(f"删除来自: {addr}的用户: {user.user_name} 成功！！！")
                 break
         lock.release()
         self.PrintOnlineUsers()
@@ -61,17 +78,17 @@ class ChatServer(threading.Thread):
     # 主体控制逻辑: 1. 将新用户添加到在线用户列表中 2. 接收来自该用户的消息
     def Control(self, conn, addr):
         # 建立链接后，客户端会发送一次自己的用户名信息
-        user_name = conn.recv(1024).decode('utf-8')  # 这里一定收集齐了一次信息吗？
+        # 代表发送过来的姓名
+        user_name = conn.recv(1024).decode('utf-8')
         self.users.AddUser(conn, user_name, addr)
-        print(f"添加来自: {addr}的用户: {user_name}成功！！！")
-        # 做好上述准备工作后，该线程就可以死循环式的开始等待信息的到来
+        self.users.UpdateOnlineUsersSeq()
         # noinspection PyBroadException
         try:
             while True:
                 self.Recv(conn)
         except Exception as e:
-            print(f"user: {user_name}, ip: {addr[0]}, port: {addr[1]}断开链接")
             self.users.DelUser(addr)
+            self.users.UpdateOnlineUsersSeq()
             conn.close()
 
     # 提取信息
@@ -102,7 +119,7 @@ class ChatServer(threading.Thread):
                 sendBuffer.append(message)
                 continue
 
-    def Send(self):
+    def HandlerSendBuffer(self):
         while True:
             time.sleep(1)
             for data in sendBuffer:
@@ -111,20 +128,20 @@ class ChatServer(threading.Thread):
                 user_name = data['user_name']
                 target = data['target']
                 message = data['message']
+                sendBuffer.remove(data)  # 移除已经提取完毕的数据
                 if target == "group":  # 如果是群发，那么pattern指定为group
                     # 群发
                     print("开始群发...")
                     user_group = self.users.GetOnlineUser()
-                    # 给每一个用户都发送消息，除了自己
+                    # 给每一个用户都发送消息, 包括自己
                     for user in user_group:
-                        if user.user_name != user_name:
-                            # 对信息做序列化后编码发送
-                            send_data = {"user_name": user_name, "message": message}
-                            send_data = json.dumps(send_data)
-                            send_data = Encode(send_data)
-                            user.sock.send(send_data.encode())
-                            sendBuffer.remove(data) # 移除已经发送的数据
-                            print("发送完毕")
+                        # 对信息做序列化后编码发送 {"user_name": 用户名, "message": 消息内容} : 如果user_name是all，代表发送的是列表
+                        send_data = {"user_name": user_name, "message": message, "pattern": "message"}
+                        send_data = json.dumps(send_data)
+                        send_data = Encode(send_data)
+                        user.sock.send(send_data.encode('utf-8'))
+                        print("发送完毕")
+
                 # 私聊 -- 根据target找到对应的用户发送
                 # TODO
 
@@ -133,11 +150,12 @@ class ChatServer(threading.Thread):
         self.sock.bind(self.addr)
         self.sock.listen(5)
         # 启动一个线程用来监视发送缓冲区，如果发现有可以发送的信息，就立即发送
-        send_thread = threading.Thread(target=self.Send)
+        send_thread = threading.Thread(target=self.HandlerSendBuffer)
         send_thread.start()
         while True:
             # 在建立链接时获取到对应用户的信息及新建立好的套接字, 并更新在线用户列表
             conn, addr = self.sock.accept()
+            print(f"获取新链接: {addr}, 为其创建一个新线程...")
             t = threading.Thread(target=self.Control, args=(conn, addr))
             t.start()
 
