@@ -34,7 +34,7 @@ class Users:
 chatServer中只需要定义一个Users对象就可以实现对用户的管理
 
 ## 效果演示
-![img.png](img.png)
+![img.png](Expound/img.png)
 后端日志打印效果：
 
-![img_1.png](img_1.png)
+![img_1.png](Expound/img_1.png)
