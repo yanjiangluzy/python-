@@ -2,8 +2,9 @@ import socket
 import sys
 import threading
 import json  # json.dumps(some)打包   json.loads(some)解包
-import tkinter
+import tkinter as tk
 import tkinter.messagebox
+import ttkbootstrap as ttk
 from tkinter.messagebox import *
 from tkinter.scrolledtext import ScrolledText  # 导入滚动文本框
 from common import *
@@ -23,17 +24,23 @@ sendBuffer = []  # 存放要发送给服务端的信息， 形式如: {user_name
 class Login:
     def __init__(self):
         # 实现登录窗口
-        self.loginWindow = tkinter.Tk()
+        self.login_success = True  # 用来判断是否登录成功
+        self.loginWindow = tk.Tk()
         self.loginWindow.title("登录")
         self.loginWindow.geometry("270x110")  # 设置好窗口大小
-        self.user = tkinter.StringVar()  # 用户名文本
+        self.loginWindow.resizable(False, False)
+        self.loginWindow.protocol("WM_DELETE_WINDOW", self.exitLogin)
+        self.user = tk.StringVar()  # 用户名文本
         self.user.set("")
-        self.entry_user = tkinter.Entry(self.loginWindow, width=80, textvariable=self.user)  # 用户名输入框
-        self.label_user = tkinter.Label(self.loginWindow, text='昵称')
+        self.entry_user = tk.Entry(self.loginWindow, textvariable=self.user)  # 用户名输入框
+        self.label_user = tk.Label(self.loginWindow, text='昵称')
         self.label_user.place(x=30, y=40, width=50, height=20)
         self.entry_user.place(x=90, y=40, width=130, height=20)
 
-    # def getLoginTxt(self):
+    def exitLogin(self):
+        self.login_success = False
+        print("登录窗口关闭")
+        self.loginWindow.destroy()  # 关闭窗口
 
     # 登录按钮处理函数
     def login(self):
@@ -41,7 +48,7 @@ class Login:
         # IP, PORT = entryIP.get().split(':')  # 获取IP和端口号
         PORT = int(PORT)  # 端口号需要为int类型
         user_name = self.entry_user.get()
-        if not user_name:
+        if user_name == "":
             tkinter.messagebox.showerror('温馨提示', message='请输入任意的用户名！')
         else:
             # 将建立链接请求发送给服务端，并将用户名发送给服务器
@@ -52,7 +59,8 @@ class Login:
         # 设置登录窗口
         # 设置登录按钮
         self.loginWindow.bind("<Return>", self.login)
-        my_button = tkinter.Button(self.loginWindow, text="登录", command=self.login)
+        my_button = ttk.Button(self.loginWindow, text="登录", command=self.login,
+                               bootstyle=("success", "info", "outline"))
         my_button.place(x=100, y=70, width=70, height=30)
         self.loginWindow.mainloop()
 
@@ -62,12 +70,13 @@ class Chat:
     def __init__(self):
         # 创建聊天窗口
         # 消息显示框， 在线用户列表框， 文本输入框， 发送按钮， 显示/隐藏在线用户列表按钮
-        self.chatWindow = tkinter.Tk()
+        self.chatWindow = tk.Tk()
         self.chatWindow.title(user_name)
         self.chatWindow.geometry("670x500")  # 设置宽和高
         # 创建滚动文本框用来展示消息
+        self.mention_label = tk.Label(self.chatWindow, width=670, text="欢迎来到聊天室!!!")
         self.message_box = ScrolledText(self.chatWindow, width=570, height=320)  # 将消息展示框设置成为只读
-        self.message_box.place(x=5, y=0)
+        self.message_box.pack()
         # 设置文本框使用的字体颜色
         self.message_box.tag_config('red', foreground='red')
         self.message_box.tag_config('blue', foreground='blue')
@@ -186,6 +195,10 @@ class ChatClient(threading.Thread):
         # 构建登录界面
         login = Login()
         login.getLoginWindow()
+        # 要检测是否登录成功
+        if not login.login_success:
+            print("登陆失败")
+            sys.exit(3)
         # 构建聊天界面
         chat = Chat()
         # 启动监视recvBuffer线程
@@ -196,7 +209,10 @@ class ChatClient(threading.Thread):
 
 if __name__ == "__main__":
     chatClient = ChatClient()
-    chatClient.run()
+    chatClient.start()
+    while True:
+        if not chatClient.is_alive():
+            sys.exit(3)
 
 # # 其他功能按钮, 开一个列表存储所有表情 -- TODO 重构代码注意点
 # b1 = ""
