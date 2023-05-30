@@ -4,37 +4,23 @@
 客户端主要构建图形化界面，对用户发出的消息做格式化，以便服务端处理<br>
 ## 功能（暂定）
 1. 能够提供基本的收发消息的功能
-2. 提供基本的表情发送
-3. 显示在线的用户
-4. 提供私聊功能
+2. 显示在线的用户
 
 ## 服务端
-1. 提供对`当前在线用户`的管理
-2. 提供应用层正确获取数据的能力
-3. 能够根据用户的需求，找到特定的发送对象，完成数据发送
+> 为每一个用户开辟一个线程，用于将用户添加到在线用户列表中以及
 ### 定制应用层协议
 length + ":;" + data   `e.g: 5:;hello` <br>
 使用json完成序列化和反序列化
 
+## 客户端
+- 登录界面
+- 聊天界面
+> 登录界面和聊天界面基于PyQt5构建，界面分别如下示：
+> 
+![img.png](Expound/img4.png)
+![img.png](Expound/img5.png)
 
-### 用户管理
-```angular2html
-class User:
-    def __init__(self, sock, user_name, addr, id):
-        self.sock = sock
-        self.user_name = user_name
-        self.addr = addr
-        self.id = id
-
-
-class Users:
-    def __init__(self):
-        self.user_group = []  # 存放 User列表
-```
-chatServer中只需要定义一个Users对象就可以实现对用户的管理
-
-## 效果演示
-![img.png](Expound/img.png)
-后端日志打印效果：
-
-![img_1.png](Expound/img_1.png)
+### 客户端client设计
+- 发送缓冲区和接收缓冲区：分别存放将要发送给服务器和从服务器中获得的数据，所有执行流共享
+- 设计一个recv函数来接收服务器的数据并将其放入recvBuffer中
+- 为发送和接收缓冲区加两把锁
