@@ -45,8 +45,8 @@ class Users:
 
     def AddUser(self, sock, user_name, addr):
         lock.acquire()
-        user_id = str(int(time.time()))  # 用时间戳来表示每一个用户
-        user_name = user_id + user_sep + user_name
+        # user_id = str(int(time.time()))  # 用时间戳来表示每一个用户
+        # user_name = user_id + user_sep + user_name
         new_user = User(sock, user_name, addr)
         self.user_group.append(new_user)
         lock.release()
@@ -140,6 +140,7 @@ class ChatServer(threading.Thread):
             user_name = data['user_name']
             target = data['target']
             message = data['message']
+            print(f"当前消息来自: {user_name}")
             try:
                 lock.acquire()
                 sendBuffer.remove(data)  # 移除已经提取完毕的数据
@@ -147,7 +148,6 @@ class ChatServer(threading.Thread):
                 lock.release()
             if target == "group":  # 如果是群发，那么pattern指定为group
                 # 群发
-                print("开始群发...")
                 user_group = self.users.GetOnlineUser()
                 # 给每一个用户都发送消息, 包括自己
                 for user in user_group:
@@ -156,10 +156,18 @@ class ChatServer(threading.Thread):
                     send_data = json.dumps(send_data)
                     send_data = Encode(send_data)
                     user.sock.send(send_data.encode('utf-8'))
-                    print("发送完毕")
-
+                    print("群发完毕")
             # 私聊 -- 根据target找到对应的用户发送
-            # TODO
+            else:
+                user_group = self.users.GetOnlineUser()
+                for user in user_group:
+                    if target == user.user_name or user_name == user.user_name:
+                        # 对信息做序列化后编码发送 {"user_name": 用户名, "message": 消息内容} : 如果user_name是all，代表发送的是列表
+                        send_data = {"user_name": user_name, "message": message, "pattern": "message"}
+                        send_data = json.dumps(send_data)
+                        send_data = Encode(send_data)
+                        user.sock.send(send_data.encode('utf-8'))
+                        print("私发完毕")
 
     def consumer(self):
         self.pool.submit(self.HandlerSendBuffer)

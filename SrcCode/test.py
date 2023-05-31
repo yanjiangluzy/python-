@@ -7,7 +7,7 @@ import time
 from common import *
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, QPushButton, \
-    QMessageBox, QLabel, QMainWindow, QPlainTextEdit, QMenu, QAction
+    QMessageBox, QLabel, QMainWindow, QPlainTextEdit, QMenu, QAction, QStatusBar
 from PyQt5.QtGui import QTextCharFormat, QFont, QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPlainTextEdit, QPushButton, QHBoxLayout, QVBoxLayout, QWidget, \
     QMenu, QAction
@@ -19,6 +19,7 @@ recvBuffer = []  # 存放由服务端发送过来的消息, 形式如： {"user_
 sendBuffer = []  # 存放要发送给服务端的信息， 形式如: {user_name:xx, target:xx, message:xx} target是group代表群发，姓名直接发，做一次特殊处理
 login_success = False
 online_users = []  # 在线用户列表
+pattern = 'group'  # 代表当前的聊天模式，默认是群聊模式
 
 
 class ChatWindow(QMainWindow):
@@ -26,6 +27,8 @@ class ChatWindow(QMainWindow):
         super().__init__()
 
         # 设置窗口标题和大小
+        self.status_bar = None
+        self.child_chat_window = None
         global user_name
         self.setWindowTitle(user_name)
         self.setGeometry(200, 200, 800, 600)
@@ -37,7 +40,6 @@ class ChatWindow(QMainWindow):
         widget.setLayout(layout)
         self.create_menu_bar()
         self.create_tool_bar()
-        self.create_status_bar()
 
         # 创建聊天记录文本框
         self.text_edit = QPlainTextEdit()
@@ -60,7 +62,7 @@ class ChatWindow(QMainWindow):
         bottom_layout.addWidget(send_button)
 
         # 创建显示在线用户列表的按钮
-        online_users_button = QPushButton('Online Users')
+        online_users_button = QPushButton('点击显示在线用户列表')
         online_users_button.setStyleSheet(
             'QPushButton { background-color: #2196F3; color: white; border-radius: 20px; padding: 10px; }'
             'QPushButton:hover { background-color: #1976D2; }')
@@ -80,9 +82,16 @@ class ChatWindow(QMainWindow):
         bold_button.setCheckable(True)
         bold_button.setIcon(QIcon('bold.png'))
         bold_button.triggered.connect(self.on_bold_clicked)
+        # 创建返回的按钮
+        return_button = QPushButton('返回群聊模式')
+        return_button.setStyleSheet(
+            'QPushButton { background-color: #2196F3; color: white; border-radius: 20px; padding: 10px; }'
+            'QPushButton:hover { background-color: #1976D2; }')
+        return_button.clicked.connect(self.on_return_clicked)
 
-        # 将加粗按钮添加到工具栏中
+        # 将按钮添加到工具栏中
         tool_bar.addAction(bold_button)
+        tool_bar.addWidget(return_button)
 
     def on_bold_clicked(self, checked):
         # 在输入框中添加或删除加粗格式
@@ -96,8 +105,12 @@ class ChatWindow(QMainWindow):
             fmt.setFontWeight(QFont.Normal)
             cursor.mergeCharFormat(fmt)
 
-    def create_status_bar(self):
-        pass
+    def create_status_bar(self, info):
+        if self.status_bar is not None:
+            self.status_bar.deleteLater()
+        self.status_bar = QStatusBar()
+        self.status_bar.showMessage(info)
+        self.setStatusBar(self.status_bar)
 
     def on_online_users_clicked(self):
         # 创建一个菜单，用于显示在线用户列表
@@ -105,19 +118,34 @@ class ChatWindow(QMainWindow):
         global online_users
         for user in online_users:
             action = QAction(user, self)
+            action.triggered.connect(lambda checked, user=user: self.open_chat_window(user))  # 为每个用户添加触发事件
             menu.addAction(action)
         menu.exec_(self.mapToGlobal(self.sender().pos()))
+
+    def open_chat_window(self, target_user):
+        # 不创建新的聊天窗口
+        global pattern
+        pattern = target_user  # 将pattern赋值成目标用户，以便发送消息给服务器找寻目标
+        info = "当前是私聊模式: to " + target_user
+        self.create_status_bar(info)
+
+    def on_return_clicked(self):
+        # 返回群聊模式，隐藏返回按钮
+        global pattern
+        pattern = 'group'
+        self.create_status_bar("当前是群聊模式, 点击在线用户列表选择用户可以进行私聊")
 
     def on_send_clicked(self):
         # 发送信息到服务器, 显示到屏幕
         text = self.input_edit.toPlainText()
         global user_name, sendBuffer
-        dic = {'user_name': user_name, 'target': 'group', 'message': text}
+        dic = {'user_name': user_name, 'target': pattern, 'message': text}
         sendBuffer.append(dic)
         self.input_edit.clear()
 
+    # 实现登录界面
 
-# 实现登录界面
+
 class Login(QWidget):
     def __init__(self):
         super().__init__()
@@ -185,6 +213,8 @@ class ChatClient(threading.Thread):
         # 链接上服务器
         self.window = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, True)
+        self.sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 60 * 1000, 30 * 1000))
         self.sock.connect((IP, int(PORT)))
         # 获取当前用户的ip和 port
         global sock
@@ -239,7 +269,7 @@ class ChatClient(threading.Thread):
                 if pos == -1:
                     break
                 length = int(buffer[:pos])
-                print(f"length: {length}")
+                # print(f"length: {length}")
                 if length > len(buffer):
                     # 说明没有截取完整，那么就返回去继续接收
                     break
@@ -260,6 +290,7 @@ class ChatClient(threading.Thread):
         app = QApplication(sys.argv)
         self.window = ChatWindow()
         self.window.show()
+        self.window.create_status_bar("当前是群聊模式, 点击在线用户列表选择用户可以进行私聊")
         sys.exit(app.exec_())
 
     def run(self):
