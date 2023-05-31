@@ -15,13 +15,10 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QPlainTextEdit, QPushButt
 IP = '127.0.0.1'
 PORT = '8888'
 user_name = ''
-listbox1 = ''  # 用于显示在线用户的列表框
-ii = 0  # 用于判断是开还是关闭列表框
-users = []  # 在线用户列表
-pattern = '[当前是群聊模式，你的信息将会发送给所有人]'  # 聊天对象, 默认为群聊
 recvBuffer = []  # 存放由服务端发送过来的消息, 形式如： {"user_name": ["list"], "message": res} 如果user_name是列表类型，代表发送的是列表
 sendBuffer = []  # 存放要发送给服务端的信息， 形式如: {user_name:xx, target:xx, message:xx} target是group代表群发，姓名直接发，做一次特殊处理
 login_success = False
+online_users = []  # 在线用户列表
 
 
 class ChatWindow(QMainWindow):
@@ -29,7 +26,8 @@ class ChatWindow(QMainWindow):
         super().__init__()
 
         # 设置窗口标题和大小
-        self.setWindowTitle('Chat Room')
+        global user_name
+        self.setWindowTitle(user_name)
         self.setGeometry(200, 200, 800, 600)
 
         # 创建主窗口部件，并设置为菜单栏、工具栏、状态栏
@@ -61,14 +59,14 @@ class ChatWindow(QMainWindow):
         bottom_layout.addWidget(self.input_edit)
         bottom_layout.addWidget(send_button)
 
-        # 设置窗口背景颜色
-        self.setStyleSheet("background-color: #f5f5f7;")
-
-        # 设置聊天记录文本框字体样式和大小
-        self.text_edit.setStyleSheet("font-family: Arial; font-size: 14px;")
-
-        # 设置输入框字体样式和大小
-        self.input_edit.setStyleSheet("font-family: Arial; font-size: 14px;")
+        # 创建显示在线用户列表的按钮
+        online_users_button = QPushButton('Online Users')
+        online_users_button.setStyleSheet(
+            'QPushButton { background-color: #2196F3; color: white; border-radius: 20px; padding: 10px; }'
+            'QPushButton:hover { background-color: #1976D2; }')
+        online_users_button.clicked.connect(self.on_online_users_clicked)
+        tool_bar = self.addToolBar('Tools')
+        tool_bar.addWidget(online_users_button)
 
     def create_menu_bar(self):
         pass
@@ -100,6 +98,15 @@ class ChatWindow(QMainWindow):
 
     def create_status_bar(self):
         pass
+
+    def on_online_users_clicked(self):
+        # 创建一个菜单，用于显示在线用户列表
+        menu = QMenu(self)
+        global online_users
+        for user in online_users:
+            action = QAction(user, self)
+            menu.addAction(action)
+        menu.exec_(self.mapToGlobal(self.sender().pos()))
 
     def on_send_clicked(self):
         # 发送信息到服务器, 显示到屏幕
@@ -180,6 +187,8 @@ class ChatClient(threading.Thread):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((IP, int(PORT)))
         # 获取当前用户的ip和 port
+        global sock
+        sock = self.sock
         addr = self.sock.getsockname()
 
     # 监视sendBuffer
@@ -205,8 +214,9 @@ class ChatClient(threading.Thread):
             for data in recvBuffer:
                 recvBuffer.remove(data)
                 if data["user_name"][0] == "list":
-                    # 是用户列表
-                    users = data["message"]
+                    # 是用户列表, 更新一下在线用户列表
+                    global online_users
+                    online_users = data["message"]
                 else:
                     # 将消息和用户名回显到屏幕上
                     # 构建消息
@@ -218,7 +228,6 @@ class ChatClient(threading.Thread):
         buffer = ""
         while True:
             data = self.sock.recv(1024).decode('utf-8')
-            print(f"收到的消息: {data}")
             if len(data) == 0:
                 # 客户端关闭
                 print("客户端关闭，我也即将关闭链接")
@@ -237,8 +246,8 @@ class ChatClient(threading.Thread):
                 string = buffer[pos + 2:pos + 2 + length]
                 buffer = buffer[pos + 2 + length:len(buffer)]  # 从buffer中删除已经提取的部分
                 message = json.loads(string)
-                print(f"收到的消息： {message}")
                 recvBuffer.append(message)
+                print(f"收到的消息： {message}")
 
     # 线程执行该函数创建登录窗口
     def login(self):
@@ -249,9 +258,8 @@ class ChatClient(threading.Thread):
     # 线程执行该函数创建聊天窗口
     def chat(self):
         app = QApplication(sys.argv)
-        window = ChatWindow()
-        self.window = window
-        window.show()
+        self.window = ChatWindow()
+        self.window.show()
         sys.exit(app.exec_())
 
     def run(self):
